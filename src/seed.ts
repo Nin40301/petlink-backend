@@ -145,6 +145,70 @@ async function seed() {
   }
   console.log(`✅ ${avaliacoesData.length} avaliações inseridas`);
 
+  // =============================================
+  // Carteira (todos os usuários)
+  // =============================================
+  usuariosData.forEach((_u, i) => {
+    db.run(
+      'INSERT INTO carteira (usuarioId, saldo) VALUES (?,?)',
+      [i + 1, Math.floor(Math.random() * 500) + 50]
+    );
+  });
+  console.log(`✅ ${usuariosData.length} carteiras criadas`);
+
+  // =============================================
+  // Transações
+  // =============================================
+  const transacoesData = [
+    [1, 'entrada', 100, 'Recarga via PIX', null],
+    [1, 'saida', 80, 'Pagamento - Banho e Tosa', 1],
+    [2, 'entrada', 250, 'Recarga via Cartão', null],
+    [6, 'entrada', 80, 'Recebimento - Banho e Tosa', 1],
+    [7, 'entrada', 45, 'Recebimento - Passeio', 2],
+    [10, 'entrada', 200, 'Recarga via PIX', null],
+  ];
+
+  for (const t of transacoesData) {
+    db.run(
+      'INSERT INTO transacoes (usuarioId, tipo, valor, descricao, pedidoId) VALUES (?,?,?,?,?)',
+      t
+    );
+  }
+  console.log(`✅ ${transacoesData.length} transações criadas`);
+
+  // =============================================
+  // Pagamentos
+  // =============================================
+  const pagamentosData = [
+    [1, 80, 'pix', 'confirmado'],
+    [2, 45, 'cartao', 'confirmado'],
+    [3, 200, 'pix', 'pendente'],
+  ];
+
+  for (const p of pagamentosData) {
+    db.run(
+      'INSERT INTO pagamentos (pedidoId, valor, metodo, status) VALUES (?,?,?,?)',
+      p
+    );
+  }
+  console.log(`✅ ${pagamentosData.length} pagamentos criados`);
+
+  // =============================================
+  // Resgates
+  // =============================================
+  const resgatesData = [
+    [6, 150, 'pendente', 'chave-pix-marcos@example.com'],
+    [7, 300, 'aprovado', 'chave-pix-patricia@example.com'],
+  ];
+
+  for (const r of resgatesData) {
+    db.run(
+      'INSERT INTO resgates (prestadorId, valor, status, chavePixOuConta) VALUES (?,?,?,?)',
+      r
+    );
+  }
+  console.log(`✅ ${resgatesData.length} resgates criados`);
+
   // Persiste no arquivo
   saveDb(db);
 

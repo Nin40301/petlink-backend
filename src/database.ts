@@ -133,6 +133,59 @@ async function initDatabase(db: Database): Promise<void> {
       dataAvaliacao TEXT    NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (pedidoId) REFERENCES pedidos(id) ON DELETE CASCADE
     );
+
+    -- =============================================
+    -- Carteira Digital
+    -- =============================================
+    CREATE TABLE IF NOT EXISTS carteira (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      usuarioId INTEGER NOT NULL UNIQUE,
+      saldo     REAL    NOT NULL DEFAULT 0,
+      updatedAt TEXT    NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (usuarioId) REFERENCES usuarios(id) ON DELETE CASCADE
+    );
+
+    -- =============================================
+    -- Transações (Entrada/Saída)
+    -- =============================================
+    CREATE TABLE IF NOT EXISTS transacoes (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      usuarioId     INTEGER NOT NULL,
+      tipo          TEXT    NOT NULL CHECK(tipo IN ('entrada', 'saida')),
+      valor         REAL    NOT NULL,
+      descricao     TEXT,
+      pedidoId      INTEGER,
+      dataTransacao TEXT    NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (usuarioId) REFERENCES usuarios(id) ON DELETE CASCADE,
+      FOREIGN KEY (pedidoId) REFERENCES pedidos(id) ON DELETE SET NULL
+    );
+
+    -- =============================================
+    -- Pagamentos (PIX / Cartão)
+    -- =============================================
+    CREATE TABLE IF NOT EXISTS pagamentos (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      pedidoId      INTEGER NOT NULL,
+      valor         REAL    NOT NULL,
+      metodo        TEXT    NOT NULL CHECK(metodo IN ('pix', 'cartao')),
+      status        TEXT    NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente', 'confirmado', 'falhou')),
+      dataPagamento TEXT    NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (pedidoId) REFERENCES pedidos(id) ON DELETE CASCADE
+    );
+
+    -- =============================================
+    -- Resgates de Saldo (Prestador)
+    -- =============================================
+    CREATE TABLE IF NOT EXISTS resgates (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      prestadorId     INTEGER NOT NULL,
+      valor           REAL    NOT NULL,
+      status          TEXT    NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente', 'aprovado', 'rejeitado', 'enviado')),
+      chavePixOuConta TEXT,
+      dataRequisicao  TEXT    NOT NULL DEFAULT (datetime('now')),
+      dataAprovacao   TEXT,
+      FOREIGN KEY (prestadorId) REFERENCES usuarios(id) ON DELETE CASCADE
+    );
   `);
 
   saveDb(db);

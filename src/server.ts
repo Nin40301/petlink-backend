@@ -15,6 +15,9 @@ import servicosRouter    from './routes/servicos';
 import pedidosRouter     from './routes/pedidos';
 import avaliacoesRouter  from './routes/avaliacoes';
 import enderecosRouter   from './routes/enderecos';
+import carteiraRouter    from './routes/carteira';
+import pagamentosRouter  from './routes/pagamentos';
+import resgatesRouter    from './routes/resgates';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -35,6 +38,9 @@ app.use('/api/servicos',   servicosRouter);
 app.use('/api/pedidos',    pedidosRouter);
 app.use('/api/avaliacoes', avaliacoesRouter);
 app.use('/api/enderecos',  enderecosRouter);
+app.use('/api/carteira',   carteiraRouter);
+app.use('/api/pagamentos', pagamentosRouter);
+app.use('/api/resgates',   resgatesRouter);
 
 // Rota raiz — informações da API
 app.get('/', (_req, res) => {
@@ -49,6 +55,9 @@ app.get('/', (_req, res) => {
       pedidos:    '/api/pedidos',
       avaliacoes: '/api/avaliacoes',
       enderecos:  '/api/enderecos',
+      carteira:   '/api/carteira',
+      pagamentos: '/api/pagamentos',
+      resgates:   '/api/resgates',
     }
   });
 });
