@@ -8,7 +8,7 @@ import express from 'express';
 import cors from 'cors';
 import getDb from './database';
 
-// Importação das rotas
+// Rotas
 import usuariosRouter    from './routes/usuarios';
 import categoriasRouter  from './routes/categorias';
 import servicosRouter    from './routes/servicos';
@@ -18,20 +18,20 @@ import enderecosRouter   from './routes/enderecos';
 import carteiraRouter    from './routes/carteira';
 import pagamentosRouter  from './routes/pagamentos';
 import resgatesRouter    from './routes/resgates';
+import authRouter        from './routes/auth';
+import adminRouter       from './routes/admin';
+import prestadorRouter   from './routes/prestador';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// =============================================
 // Middlewares globais
-// =============================================
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// =============================================
 // Rotas da API
-// =============================================
+app.use('/api/auth',       authRouter);
 app.use('/api/usuarios',   usuariosRouter);
 app.use('/api/categorias', categoriasRouter);
 app.use('/api/servicos',   servicosRouter);
@@ -41,14 +41,17 @@ app.use('/api/enderecos',  enderecosRouter);
 app.use('/api/carteira',   carteiraRouter);
 app.use('/api/pagamentos', pagamentosRouter);
 app.use('/api/resgates',   resgatesRouter);
+app.use('/api/admin',      adminRouter);
+app.use('/api/prestador',  prestadorRouter);
 
-// Rota raiz — informações da API
+// Rota raiz
 app.get('/', (_req, res) => {
   res.json({
     name: 'PetLink API',
-    version: '1.0.0',
+    version: '2.0.0',
     description: 'Backend do marketplace de serviços para pets',
     endpoints: {
+      auth:       '/api/auth/login',
       usuarios:   '/api/usuarios',
       categorias: '/api/categorias',
       servicos:   '/api/servicos',
@@ -58,18 +61,19 @@ app.get('/', (_req, res) => {
       carteira:   '/api/carteira',
       pagamentos: '/api/pagamentos',
       resgates:   '/api/resgates',
+      admin:      '/api/admin/dashboard',
+      prestador:  '/api/prestador/:id/ganhos/mensal',
     }
   });
 });
 
-// 404 para rotas não encontradas
+// 404
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: 'Rota não encontrada' });
 });
 
-// Inicializa o banco e inicia o servidor
 async function start() {
-  await getDb(); // garante que as tabelas existam antes de aceitar requisições
+  await getDb();
   app.listen(PORT, () => {
     console.log(`\n🚀 PetLink API rodando em http://localhost:${PORT}`);
     console.log(`📋 Endpoints disponíveis em http://localhost:${PORT}\n`);

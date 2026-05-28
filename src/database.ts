@@ -2,8 +2,6 @@
  * database.ts
  * Inicialização do banco de dados SQLite com sql.js (WebAssembly).
  * Persiste o banco em arquivo .db para manter dados entre execuções.
- *
- * Uso: await getDb() para obter a instância do banco.
  */
 
 import initSqlJs, { Database } from 'sql.js';
@@ -12,19 +10,13 @@ import path from 'path';
 
 const DB_PATH = path.resolve(__dirname, '..', 'petlink.db');
 
-// Instância singleton do banco
 let dbInstance: Database | null = null;
 
-/**
- * Retorna a instância do banco de dados (singleton).
- * Inicializa e cria as tabelas na primeira chamada.
- */
 export async function getDb(): Promise<Database> {
   if (dbInstance) return dbInstance;
 
   const SQL = await initSqlJs();
 
-  // Carrega banco existente ou cria novo
   if (fs.existsSync(DB_PATH)) {
     const fileBuffer = fs.readFileSync(DB_PATH);
     dbInstance = new SQL.Database(fileBuffer);
@@ -32,45 +24,30 @@ export async function getDb(): Promise<Database> {
     dbInstance = new SQL.Database();
   }
 
-  // Habilita chaves estrangeiras
   dbInstance.run('PRAGMA foreign_keys = ON;');
-
-  // Cria as tabelas
   await initDatabase(dbInstance);
 
   return dbInstance;
 }
 
-/**
- * Persiste o banco de dados em arquivo.
- * Deve ser chamado após operações de escrita.
- */
 export function saveDb(db: Database): void {
   const data = db.export();
   fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
-/**
- * Inicializa todas as tabelas do banco de dados.
- */
 async function initDatabase(db: Database): Promise<void> {
   db.run(`
-    -- =============================================
-    -- Entidade 1: Usuário
-    -- =============================================
     CREATE TABLE IF NOT EXISTS usuarios (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       nome        TEXT    NOT NULL,
       email       TEXT    NOT NULL UNIQUE,
       senha       TEXT    NOT NULL,
-      tipo        TEXT    NOT NULL CHECK(tipo IN ('cliente', 'prestador')),
+      tipo        TEXT    NOT NULL CHECK(tipo IN ('cliente', 'prestador', 'admin')),
       telefone    TEXT,
+      ativo       INTEGER NOT NULL DEFAULT 1,
       createdAt   TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
-    -- =============================================
-    -- Entidade 3: Categoria
-    -- =============================================
     CREATE TABLE IF NOT EXISTS categorias (
       id        INTEGER PRIMARY KEY AUTOINCREMENT,
       nome      TEXT    NOT NULL UNIQUE,
@@ -78,9 +55,6 @@ async function initDatabase(db: Database): Promise<void> {
       icone     TEXT
     );
 
-    -- =============================================
-    -- Entidade 2: Serviço
-    -- =============================================
     CREATE TABLE IF NOT EXISTS servicos (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       titulo      TEXT    NOT NULL,
@@ -93,9 +67,6 @@ async function initDatabase(db: Database): Promise<void> {
       FOREIGN KEY (prestadorId) REFERENCES usuarios(id) ON DELETE CASCADE
     );
 
-    -- =============================================
-    -- Entidade 6: Endereço
-    -- =============================================
     CREATE TABLE IF NOT EXISTS enderecos (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       usuarioId   INTEGER NOT NULL,
@@ -107,9 +78,6 @@ async function initDatabase(db: Database): Promise<void> {
       FOREIGN KEY (usuarioId) REFERENCES usuarios(id) ON DELETE CASCADE
     );
 
-    -- =============================================
-    -- Entidade 4: Pedido/Contrato
-    -- =============================================
     CREATE TABLE IF NOT EXISTS pedidos (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       clienteId       INTEGER NOT NULL,
@@ -122,9 +90,6 @@ async function initDatabase(db: Database): Promise<void> {
       FOREIGN KEY (servicoId) REFERENCES servicos(id) ON DELETE CASCADE
     );
 
-    -- =============================================
-    -- Entidade 5: Avaliação
-    -- =============================================
     CREATE TABLE IF NOT EXISTS avaliacoes (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       pedidoId      INTEGER NOT NULL UNIQUE,
@@ -134,9 +99,6 @@ async function initDatabase(db: Database): Promise<void> {
       FOREIGN KEY (pedidoId) REFERENCES pedidos(id) ON DELETE CASCADE
     );
 
-    -- =============================================
-    -- Carteira Digital
-    -- =============================================
     CREATE TABLE IF NOT EXISTS carteira (
       id        INTEGER PRIMARY KEY AUTOINCREMENT,
       usuarioId INTEGER NOT NULL UNIQUE,
@@ -145,9 +107,6 @@ async function initDatabase(db: Database): Promise<void> {
       FOREIGN KEY (usuarioId) REFERENCES usuarios(id) ON DELETE CASCADE
     );
 
-    -- =============================================
-    -- Transações (Entrada/Saída)
-    -- =============================================
     CREATE TABLE IF NOT EXISTS transacoes (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       usuarioId     INTEGER NOT NULL,
@@ -160,9 +119,6 @@ async function initDatabase(db: Database): Promise<void> {
       FOREIGN KEY (pedidoId) REFERENCES pedidos(id) ON DELETE SET NULL
     );
 
-    -- =============================================
-    -- Pagamentos (PIX / Cartão)
-    -- =============================================
     CREATE TABLE IF NOT EXISTS pagamentos (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       pedidoId      INTEGER NOT NULL,
@@ -173,9 +129,6 @@ async function initDatabase(db: Database): Promise<void> {
       FOREIGN KEY (pedidoId) REFERENCES pedidos(id) ON DELETE CASCADE
     );
 
-    -- =============================================
-    -- Resgates de Saldo (Prestador)
-    -- =============================================
     CREATE TABLE IF NOT EXISTS resgates (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       prestadorId     INTEGER NOT NULL,
