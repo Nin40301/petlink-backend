@@ -2,12 +2,13 @@
  * routes/pedidos.ts
  * Rotas REST para a entidade Pedido/Contrato.
  *
- * GET    /api/pedidos                - Lista pedidos (filtros: clienteId, prestadorId)
+ * GET    /api/pedidos                - Lista pedidos (filtros: clienteId, prestadorId, status)
  * GET    /api/pedidos/:id            - Busca pedido por ID
- * POST   /api/pedidos                - Cria novo pedido
+ * POST   /api/pedidos                - Cria novo pedido (debita saldo da carteira do cliente)
  * PUT    /api/pedidos/:id            - Atualiza status do pedido
  * PUT    /api/pedidos/:id/aceitar    - Prestador aceita pedido
- * PUT    /api/pedidos/:id/concluir   - Cliente confirma conclusão (libera pagamento)
+ * PUT    /api/pedidos/:id/concluir   - Cliente confirma conclusão (libera pagamento ao prestador)
+ * PUT    /api/pedidos/:id/cancelar   - Cancela pedido e estorna saldo ao cliente
  * DELETE /api/pedidos/:id            - Remove pedido
  */
 
@@ -22,7 +23,7 @@ const STATUS_VALIDOS = ['pendente', 'aceito', 'concluido', 'cancelado'];
 router.get('/', async (req: Request, res: Response) => {
   try {
     const db = await getDb();
-    const { clienteId, prestadorId } = req.query;
+    const { clienteId, prestadorId, status } = req.query;
 
     let sql = `
       SELECT p.*,
@@ -30,19 +31,27 @@ router.get('/', async (req: Request, res: Response) => {
              c.email AS clienteEmail,
              s.titulo AS servicoTitulo,
              s.categoria AS servicoCategoria,
-             s.prestadorId
+             s.prestadorId,
+             pr.nome AS prestadorNome
       FROM pedidos p
       JOIN usuarios c ON p.clienteId = c.id
       JOIN servicos s ON p.servicoId = s.id
+      JOIN usuarios pr ON s.prestadorId = pr.id
+      WHERE 1=1
     `;
     const params: any[] = [];
 
     if (clienteId) {
-      sql += ' WHERE p.clienteId = ?';
+      sql += ' AND p.clienteId = ?';
       params.push(clienteId);
-    } else if (prestadorId) {
-      sql += ' WHERE s.prestadorId = ?';
+    }
+    if (prestadorId) {
+      sql += ' AND s.prestadorId = ?';
       params.push(prestadorId);
+    }
+    if (status) {
+      sql += ' AND p.status = ?';
+      params.push(status);
     }
 
     sql += ' ORDER BY p.dataSolicitacao DESC';
@@ -82,11 +91,11 @@ router.get('/:id', async (req: Request, res: Response) => {
 // POST /api/pedidos
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { clienteId, servicoId, valorTotal } = req.body;
-    if (!clienteId || !servicoId || !valorTotal) {
+    const { clienteId, servicoId } = req.body;
+    if (!clienteId || !servicoId) {
       return res.status(400).json({
         success: false,
-        message: 'Campos obrigatórios: clienteId, servicoId, valorTotal'
+        message: 'Campos obrigatórios: clienteId, servicoId'
       });
     }
     const db = await getDb();
@@ -94,16 +103,54 @@ router.post('/', async (req: Request, res: Response) => {
     if (!cliente) {
       return res.status(400).json({ success: false, message: 'Cliente não encontrado' });
     }
-    const servico = queryOne(db, "SELECT id FROM servicos WHERE id = ? AND status = 'ativo'", [servicoId]);
+    const servico = queryOne(db, "SELECT * FROM servicos WHERE id = ? AND status = 'ativo'", [servicoId]);
     if (!servico) {
       return res.status(400).json({ success: false, message: 'Serviço não encontrado ou inativo' });
     }
+    if (servico.prestadorId === Number(clienteId)) {
+      return res.status(400).json({ success: false, message: 'Você não pode contratar seu próprio serviço' });
+    }
+    const valorTotal = servico.preco;
+    // Verifica e debita saldo da carteira do cliente
+    const carteiraCliente = queryOne(db, 'SELECT * FROM carteira WHERE usuarioId = ?', [clienteId]);
+    if (!carteiraCliente) {
+      return res.status(400).json({ success: false, message: 'Carteira do cliente não encontrada. Adicione saldo antes de contratar.' });
+    }
+    if (carteiraCliente.saldo < valorTotal) {
+      return res.status(400).json({
+        success: false,
+        message: `Saldo insuficiente. Seu saldo: R$ ${carteiraCliente.saldo.toFixed(2)}. Valor do serviço: R$ ${valorTotal.toFixed(2)}.`,
+        saldoAtual: carteiraCliente.saldo,
+        valorNecessario: valorTotal
+      });
+    }
     const newId = execute(db,
-      'INSERT INTO pedidos (clienteId, servicoId, valorTotal) VALUES (?,?,?)',
-      [clienteId, servicoId, valorTotal]
+      "INSERT INTO pedidos (clienteId, servicoId, dataSolicitacao, status, valorTotal) VALUES (?,?,datetime('now'),?,?)",
+      [clienteId, servicoId, 'pendente', valorTotal]
     );
-    const novo = queryOne(db, 'SELECT * FROM pedidos WHERE id = ?', [newId]);
-    res.status(201).json({ success: true, data: novo });
+    // Debita saldo da carteira do cliente
+    execute(db,
+      "UPDATE carteira SET saldo = saldo - ?, updatedAt = datetime('now') WHERE usuarioId = ?",
+      [valorTotal, clienteId]
+    );
+    // Registra transação de saída para o cliente
+    execute(db,
+      'INSERT INTO transacoes (usuarioId, tipo, valor, descricao, pedidoId) VALUES (?,?,?,?,?)',
+      [clienteId, 'saida', valorTotal, `Contratação - ${servico.titulo}`, newId]
+    );
+    // Registra pagamento confirmado
+    execute(db,
+      "INSERT INTO pagamentos (pedidoId, valor, metodo, status) VALUES (?,?,?,?)",
+      [newId, valorTotal, 'carteira', 'confirmado']
+    );
+    const novo = queryOne(db, `
+      SELECT p.*, s.titulo AS servicoTitulo, s.prestadorId, pr.nome AS prestadorNome
+      FROM pedidos p
+      JOIN servicos s ON p.servicoId = s.id
+      JOIN usuarios pr ON s.prestadorId = pr.id
+      WHERE p.id = ?
+    `, [newId]);
+    res.status(201).json({ success: true, data: novo, message: 'Pedido criado! O valor foi debitado da sua carteira.' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Erro ao criar pedido', error: String(error) });
   }
@@ -122,7 +169,7 @@ router.put('/:id/aceitar', async (req: Request, res: Response) => {
     }
     execute(db, "UPDATE pedidos SET status = 'aceito' WHERE id = ?", [req.params.id]);
     const atualizado = queryOne(db, 'SELECT * FROM pedidos WHERE id = ?', [req.params.id]);
-    res.json({ success: true, data: atualizado });
+    res.json({ success: true, data: atualizado, message: 'Pedido aceito com sucesso!' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Erro ao aceitar pedido', error: String(error) });
   }
@@ -133,7 +180,7 @@ router.put('/:id/concluir', async (req: Request, res: Response) => {
   try {
     const db = await getDb();
     const pedido = queryOne(db, `
-      SELECT p.*, s.prestadorId
+      SELECT p.*, s.prestadorId, s.titulo AS servicoTitulo
       FROM pedidos p
       JOIN servicos s ON p.servicoId = s.id
       WHERE p.id = ?
@@ -153,11 +200,10 @@ router.put('/:id/concluir', async (req: Request, res: Response) => {
     const carteiraPrestador = queryOne(db, 'SELECT * FROM carteira WHERE usuarioId = ?', [pedido.prestadorId]);
     if (carteiraPrestador) {
       execute(db,
-        'UPDATE carteira SET saldo = ?, updatedAt = datetime(\'now\') WHERE usuarioId = ?',
-        [carteiraPrestador.saldo + pedido.valorTotal, pedido.prestadorId]
+        "UPDATE carteira SET saldo = saldo + ?, updatedAt = datetime('now') WHERE usuarioId = ?",
+        [pedido.valorTotal, pedido.prestadorId]
       );
     } else {
-      // Cria carteira se não existir
       execute(db,
         'INSERT INTO carteira (usuarioId, saldo) VALUES (?, ?)',
         [pedido.prestadorId, pedido.valorTotal]
@@ -167,13 +213,74 @@ router.put('/:id/concluir', async (req: Request, res: Response) => {
     // Registra transação de entrada para o prestador
     execute(db,
       'INSERT INTO transacoes (usuarioId, tipo, valor, descricao, pedidoId) VALUES (?,?,?,?,?)',
-      [pedido.prestadorId, 'entrada', pedido.valorTotal, 'Pagamento liberado - serviço concluído', pedido.id]
+      [pedido.prestadorId, 'entrada', pedido.valorTotal, `Pagamento recebido - ${pedido.servicoTitulo}`, pedido.id]
     );
 
     const atualizado = queryOne(db, 'SELECT * FROM pedidos WHERE id = ?', [req.params.id]);
-    res.json({ success: true, data: atualizado, message: 'Pedido concluído e pagamento liberado ao prestador' });
+    res.json({ success: true, data: atualizado, message: 'Pedido concluído e pagamento liberado ao prestador!' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Erro ao concluir pedido', error: String(error) });
+  }
+});
+
+// PUT /api/pedidos/:id/cancelar — cancela pedido e estorna saldo ao cliente
+router.put('/:id/cancelar', async (req: Request, res: Response) => {
+  try {
+    const db = await getDb();
+    const pedido = queryOne(db, `
+      SELECT p.*, s.titulo AS servicoTitulo, s.prestadorId
+      FROM pedidos p
+      JOIN servicos s ON p.servicoId = s.id
+      WHERE p.id = ?
+    `, [req.params.id]);
+
+    if (!pedido) {
+      return res.status(404).json({ success: false, message: 'Pedido não encontrado' });
+    }
+    if (pedido.status === 'cancelado') {
+      return res.status(400).json({ success: false, message: 'Pedido já está cancelado' });
+    }
+    if (pedido.status === 'concluido') {
+      return res.status(400).json({ success: false, message: 'Pedido já concluído não pode ser cancelado' });
+    }
+
+    // Atualiza status do pedido
+    execute(db, "UPDATE pedidos SET status = 'cancelado' WHERE id = ?", [req.params.id]);
+
+    // Estorna o valor para a carteira do cliente
+    const carteiraCliente = queryOne(db, 'SELECT * FROM carteira WHERE usuarioId = ?', [pedido.clienteId]);
+    if (carteiraCliente) {
+      execute(db,
+        "UPDATE carteira SET saldo = saldo + ?, updatedAt = datetime('now') WHERE usuarioId = ?",
+        [pedido.valorTotal, pedido.clienteId]
+      );
+    } else {
+      execute(db,
+        'INSERT INTO carteira (usuarioId, saldo) VALUES (?, ?)',
+        [pedido.clienteId, pedido.valorTotal]
+      );
+    }
+
+    // Registra transação de entrada (estorno) para o cliente
+    execute(db,
+      'INSERT INTO transacoes (usuarioId, tipo, valor, descricao, pedidoId) VALUES (?,?,?,?,?)',
+      [pedido.clienteId, 'entrada', pedido.valorTotal, `Estorno - cancelamento de ${pedido.servicoTitulo}`, pedido.id]
+    );
+
+    // Atualiza pagamento para cancelado
+    execute(db,
+      "UPDATE pagamentos SET status = 'falhou' WHERE pedidoId = ? AND status = 'confirmado'",
+      [req.params.id]
+    );
+
+    const atualizado = queryOne(db, 'SELECT * FROM pedidos WHERE id = ?', [req.params.id]);
+    res.json({
+      success: true,
+      data: atualizado,
+      message: `Pedido cancelado. R$ ${pedido.valorTotal.toFixed(2)} estornado para sua carteira.`
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Erro ao cancelar pedido', error: String(error) });
   }
 });
 
