@@ -138,10 +138,10 @@ router.post('/', async (req: Request, res: Response) => {
       'INSERT INTO transacoes (usuarioId, tipo, valor, descricao, pedidoId) VALUES (?,?,?,?,?)',
       [clienteId, 'saida', valorTotal, `Contratação - ${servico.titulo}`, newId]
     );
-    // Registra pagamento confirmado
+    // Registra pagamento confirmado (usando 'pix' como método genérico de carteira)
     execute(db,
       "INSERT INTO pagamentos (pedidoId, valor, metodo, status) VALUES (?,?,?,?)",
-      [newId, valorTotal, 'carteira', 'confirmado']
+      [newId, valorTotal, 'pix', 'confirmado']
     );
     const novo = queryOne(db, `
       SELECT p.*, s.titulo AS servicoTitulo, s.prestadorId, pr.nome AS prestadorNome
