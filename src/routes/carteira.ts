@@ -15,8 +15,8 @@ import { queryOne, queryAll, execute } from '../db-utils';
 
 const router = Router();
 
-// GET /api/carteira/:usuarioId
-router.get('/:usuarioId/historico', async (req: Request, res: Response) => {
+// GET /api/carteira/historico/:usuarioId
+router.get('/historico/:usuarioId', async (req: Request, res: Response) => {
   try {
     const db = await getDb();
     const transacoes = queryAll(db,

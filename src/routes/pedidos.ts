@@ -13,7 +13,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import getDb from '../database';
+import getDb, { saveDb } from '../database';
 import { queryAll, queryOne, execute } from '../db-utils';
 
 const router = Router();
@@ -91,13 +91,17 @@ router.get('/:id', async (req: Request, res: Response) => {
 // POST /api/pedidos
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { clienteId, servicoId } = req.body;
+    let { clienteId, servicoId } = req.body;
     if (!clienteId || !servicoId) {
       return res.status(400).json({
         success: false,
         message: 'Campos obrigatórios: clienteId, servicoId'
       });
     }
+    
+    clienteId = Number(clienteId);
+    servicoId = Number(servicoId);
+
     const db = await getDb();
     const cliente = queryOne(db, "SELECT id FROM usuarios WHERE id = ? AND tipo = 'cliente'", [clienteId]);
     if (!cliente) {
@@ -107,7 +111,7 @@ router.post('/', async (req: Request, res: Response) => {
     if (!servico) {
       return res.status(400).json({ success: false, message: 'Serviço não encontrado ou inativo' });
     }
-    if (servico.prestadorId === Number(clienteId)) {
+    if (servico.prestadorId === clienteId) {
       return res.status(400).json({ success: false, message: 'Você não pode contratar seu próprio serviço' });
     }
     const valorTotal = servico.preco;
@@ -138,10 +142,10 @@ router.post('/', async (req: Request, res: Response) => {
       'INSERT INTO transacoes (usuarioId, tipo, valor, descricao, pedidoId) VALUES (?,?,?,?,?)',
       [clienteId, 'saida', valorTotal, `Contratação - ${servico.titulo}`, newId]
     );
-    // Registra pagamento confirmado
+    // Registra pagamento confirmado (usamos 'pix' como placeholder já que o banco só aceita 'pix' ou 'cartao')
     execute(db,
       "INSERT INTO pagamentos (pedidoId, valor, metodo, status) VALUES (?,?,?,?)",
-      [newId, valorTotal, 'carteira', 'confirmado']
+      [newId, valorTotal, 'pix', 'confirmado']
     );
     const novo = queryOne(db, `
       SELECT p.*, s.titulo AS servicoTitulo, s.prestadorId, pr.nome AS prestadorNome
@@ -167,7 +171,9 @@ router.put('/:id/aceitar', async (req: Request, res: Response) => {
     if (pedido.status !== 'pendente') {
       return res.status(400).json({ success: false, message: `Pedido não pode ser aceito (status atual: ${pedido.status})` });
     }
-    execute(db, "UPDATE pedidos SET status = 'aceito' WHERE id = ?", [req.params.id]);
+        execute(db,
+      "UPDATE pedidos SET status = 'aceito' WHERE id = ?", [req.params.id]);
+    saveDb(db);
     const atualizado = queryOne(db, 'SELECT * FROM pedidos WHERE id = ?', [req.params.id]);
     res.json({ success: true, data: atualizado, message: 'Pedido aceito com sucesso!' });
   } catch (error) {
@@ -194,7 +200,7 @@ router.put('/:id/concluir', async (req: Request, res: Response) => {
     }
 
     // Atualiza status do pedido
-    execute(db, "UPDATE pedidos SET status = 'concluido' WHERE id = ?", [req.params.id]);
+    db.run("UPDATE pedidos SET status = 'concluido' WHERE id = ?", [req.params.id]);
 
     // Libera pagamento: credita saldo na carteira do prestador
     const carteiraPrestador = queryOne(db, 'SELECT * FROM carteira WHERE usuarioId = ?', [pedido.prestadorId]);
@@ -245,7 +251,7 @@ router.put('/:id/cancelar', async (req: Request, res: Response) => {
     }
 
     // Atualiza status do pedido
-    execute(db, "UPDATE pedidos SET status = 'cancelado' WHERE id = ?", [req.params.id]);
+    db.run("UPDATE pedidos SET status = 'cancelado' WHERE id = ?", [req.params.id]);
 
     // Estorna o valor para a carteira do cliente
     const carteiraCliente = queryOne(db, 'SELECT * FROM carteira WHERE usuarioId = ?', [pedido.clienteId]);

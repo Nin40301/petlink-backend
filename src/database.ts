@@ -45,6 +45,8 @@ async function initDatabase(db: Database): Promise<void> {
       tipo        TEXT    NOT NULL CHECK(tipo IN ('cliente', 'prestador', 'admin')),
       telefone    TEXT,
       ativo       INTEGER NOT NULL DEFAULT 1,
+      reset_token TEXT,
+      reset_token_expires TEXT,
       createdAt   TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
