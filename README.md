@@ -2,6 +2,12 @@
 
 Backend do **PetLink**, marketplace de prestação de serviços para pets. Desenvolvido com **Node.js**, **Express**, **TypeScript** e **SQLite** (via `sql.js`).
 
+## 👨‍💻 Desenvolvedor
+
+| Nome | Matrícula |
+| :--- | :--- |
+| Miguel Luis Ferreira de Paula | UC24102939 |
+
 ---
 
 ## Tecnologias
@@ -104,7 +110,7 @@ Authorization: Bearer <token>
 | GET    | `/api/carteira/:usuarioId`        | Consultar saldo                  |
 | POST   | `/api/carteira/adicionar`         | Adicionar saldo (cliente)        |
 | POST   | `/api/carteira/resgatar`          | Solicitar resgate (prestador)    |
-| GET    | `/api/carteira/:usuarioId/historico` | Histórico de transações       |
+| GET    | `/api/carteira/historico/:usuarioId` | Histórico de transações       |
 
 **Adicionar saldo:**
 ```json
